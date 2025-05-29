@@ -1,7 +1,7 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filters
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -22,13 +22,13 @@ else:
     logger.info("Telegram token loaded successfully")
 
 # Function to respond to messages
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+def echo(update: Update, context: CallbackContext):
     try:
         if update.message:
             user = update.message.from_user
             logger.info(f"Received message from user {user.id} ({user.first_name}): {update.message.text}")
             response = f"شما نوشتید: {update.message.text}"
-            await update.message.reply_text(response)
+            update.message.reply_text(response)
             logger.info(f"Sent response to user {user.id}")
     except Exception as e:
         logger.error(f"Error in echo handler: {str(e)}", exc_info=True)
@@ -37,14 +37,20 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     try:
         logger.info("Starting bot...")
-        app = ApplicationBuilder().token(TOKEN).build()
-        logger.info("Application built successfully")
+        updater = Updater(TOKEN)
+        logger.info("Updater created successfully")
         
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+        # Get the dispatcher to register handlers
+        dispatcher = updater.dispatcher
+        
+        # Add message handler
+        dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
         logger.info("Message handler added successfully")
         
+        # Start the Bot
         logger.info("Starting polling...")
-        app.run_polling()
+        updater.start_polling()
+        updater.idle()
     except Exception as e:
         logger.error(f"Error in main function: {str(e)}", exc_info=True)
         raise
