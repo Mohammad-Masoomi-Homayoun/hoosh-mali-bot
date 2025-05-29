@@ -2,19 +2,30 @@ import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater,
+    Application,
     CommandHandler,
     CallbackQueryHandler,
     ConversationHandler,
-    CallbackContext,
+    ContextTypes,
 )
 
-# Configure logging
+# Configure logging with more detailed format
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.DEBUG  # Changed to DEBUG for more detailed logs
 )
 logger = logging.getLogger(__name__)
+
+# Read token from environment variable
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+logger.debug(f"Environment variables available: {dict(os.environ)}")
+logger.debug(f"TELEGRAM_TOKEN value: {'Set' if TOKEN else 'Not set'}")
+
+if not TOKEN:
+    logger.error("TELEGRAM_TOKEN environment variable is not set!")
+    raise ValueError("TELEGRAM_TOKEN environment variable is not set!")
+else:
+    logger.info("Telegram token loaded successfully")
 
 # States for conversation handler
 QUESTION = 0
@@ -222,7 +233,7 @@ advice_map = {
     (15, 4): "برنامه جامع میراث مالی عالی است، به همین روال ادامه دهید."
 }
 
-def start(update: Update, context: CallbackContext) -> int:
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Start the conversation and ask the first question."""
     user = update.effective_user
     context.user_data['current_question'] = 0
@@ -238,15 +249,15 @@ def start(update: Update, context: CallbackContext) -> int:
         "برای شروع، به سؤال اول پاسخ دهید:"
     )
     
-    update.message.reply_text(welcome_message)
-    return ask_question(update, context)
+    await update.message.reply_text(welcome_message)
+    return await ask_question(update, context)
 
-def ask_question(update: Update, context: CallbackContext) -> int:
+async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Ask the current question."""
     current_question = context.user_data['current_question']
     
     if current_question >= len(questions):
-        return show_results(update, context)
+        return await show_results(update, context)
     
     question = questions[current_question]
     keyboard = []
@@ -257,22 +268,22 @@ def ask_question(update: Update, context: CallbackContext) -> int:
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if update.callback_query:
-        update.callback_query.edit_message_text(
+        await update.callback_query.edit_message_text(
             text=question['text'],
             reply_markup=reply_markup
         )
     else:
-        update.message.reply_text(
+        await update.message.reply_text(
             text=question['text'],
             reply_markup=reply_markup
         )
     
     return QUESTION
 
-def handle_answer(update: Update, context: CallbackContext) -> int:
+async def handle_answer(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Handle the user's answer and move to the next question."""
     query = update.callback_query
-    query.answer()
+    await query.answer()
     
     current_question = context.user_data['current_question']
     selected_option = int(query.data)
@@ -284,9 +295,9 @@ def handle_answer(update: Update, context: CallbackContext) -> int:
     # Move to next question
     context.user_data['current_question'] += 1
     
-    return ask_question(update, context)
+    return await ask_question(update, context)
 
-def show_results(update: Update, context: CallbackContext) -> int:
+async def show_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Calculate and show the final results."""
     total_score = sum(context.user_data['scores'])
     
@@ -313,11 +324,15 @@ def show_results(update: Update, context: CallbackContext) -> int:
     )
     
     if update.callback_query:
-        update.callback_query.edit_message_text(text=result_message)
+        await update.callback_query.edit_message_text(text=result_message)
     else:
-        update.message.reply_text(text=result_message)
+        await update.message.reply_text(text=result_message)
     
     return ConversationHandler.END
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle errors gracefully."""
+    logger.error(f"Update {update} caused error {context.error}")
 
 def main():
     """Start the bot."""
@@ -326,26 +341,34 @@ def main():
     if not token:
         raise ValueError("TELEGRAM_TOKEN environment variable is not set!")
     
-    # Create the Updater and pass it your bot's token
-    updater = Updater(token)
-    
-    # Get the dispatcher to register handlers
-    dispatcher = updater.dispatcher
-    
-    # Add conversation handler
-    conv_handler = ConversationHandler(
-        entry_points=[CommandHandler('start', start)],
-        states={
-            QUESTION: [CallbackQueryHandler(handle_answer)],
-        },
-        fallbacks=[],
-    )
-    
-    dispatcher.add_handler(conv_handler)
-    
-    # Start the Bot
-    updater.start_polling()
-    updater.idle()
+    try:
+        # Create the Application
+        application = Application.builder().token(token).build()
+        
+        # Add conversation handler
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', start)],
+            states={
+                QUESTION: [CallbackQueryHandler(handle_answer)],
+            },
+            fallbacks=[],
+            per_message=False,
+            per_chat=True,
+            name="financial_test"
+        )
+        
+        application.add_handler(conv_handler)
+        
+        # Add error handler
+        application.add_error_handler(error_handler)
+        
+        # Start the Bot
+        logger.info("Starting bot...")
+        application.run_polling(drop_pending_updates=True)
+        
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
+        raise
 
 if __name__ == '__main__':
     main()
