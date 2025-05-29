@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 
 # Read token from environment variable
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+logger.debug(f"Environment variables available: {dict(os.environ)}")
+logger.debug(f"TELEGRAM_TOKEN value: {'Set' if TOKEN else 'Not set'}")
+
 if not TOKEN:
     logger.error("TELEGRAM_TOKEN environment variable is not set!")
     raise ValueError("TELEGRAM_TOKEN environment variable is not set!")
